@@ -13,7 +13,7 @@ require AutoLoader;
 	PARAM_MAX_LEN
 	TCLinkHandle
 );
-$VERSION = '3.3';
+$VERSION = '3.3.1';
 
 sub AUTOLOAD {
     my $constname;
