@@ -1,68 +1,79 @@
 package Net::TCLink;
 
-require 5.005_62;
 use strict;
-use warnings;
+use Carp;
+use vars qw($VERSION @ISA @EXPORT @EXPORT_OK $AUTOLOAD);
 
 require Exporter;
 require DynaLoader;
+require AutoLoader;
 
-our @ISA = qw(Exporter DynaLoader);
-
-# Items to export into callers namespace by default. Note: do not export
-# names by default without a very good reason. Use EXPORT_OK instead.
-# Do not simply export all your public functions/methods/constants.
-
-# This allows declaration	use Net::TCLink ':all';
-# If you do not need this, moving things directly into @EXPORT or @EXPORT_OK
-# will save memory.
-our %EXPORT_TAGS = ( 'all' => [ qw(
-	
-) ] );
-
-our @EXPORT_OK = ( @{ $EXPORT_TAGS{'all'} } );
-
-our @EXPORT = qw(
-	
+@ISA = qw(Exporter DynaLoader);
+@EXPORT = qw(
+	PARAM_MAX_LEN
+	TCLinkHandle
 );
-our $VERSION = '3.25';
+$VERSION = '3.3';
+
+sub AUTOLOAD {
+    my $constname;
+    ($constname = $AUTOLOAD) =~ s/.*:://;
+    croak "& not defined" if $constname eq 'constant';
+    my $val = constant($constname, @_ ? $_[0] : 0);
+    if ($! != 0) {
+	if ($! =~ /Invalid/) {
+	    $AutoLoader::AUTOLOAD = $AUTOLOAD;
+	    goto &AutoLoader::AUTOLOAD;
+	}
+	else {
+		croak "Your vendor has not defined Net::TCLink macro $constname";
+	}
+    }
+    no strict 'refs';
+    *$AUTOLOAD = sub () { $val };
+    goto &$AUTOLOAD;
+}
 
 bootstrap Net::TCLink $VERSION;
 
 sub send
 {
-	my $params;
+   my $params;
 
-	if ($#_ == 0)
-	{
-		$params = $_[0];
-	}
-	else
-	{
-		%$params = @_;
-	}
+   if ($#_ == 0)
+   {
+      $params = $_[0];
+   }
+   else
+   {
+      %$params = @_;
+   }
 
-	my $handle = TCLinkCreate();
-	foreach (keys %$params) 
-	{
-		TCLinkPushParam($handle,$_,$params->{$_});
-	}
+   my $handle = TCLinkCreate();
+   foreach (keys %$params)
+   {
+      TCLinkPushParam($handle,$_,$params->{$_});
+   }
 
-	TCLinkSend($handle);
+   TCLinkSend($handle);
 
-	my %response;
-	my $buf = TCLinkGetEntireResponse($handle);
-	my @parts = split/\n/,$buf;
-	foreach (@parts) 
-	{
-			my ($name,$val) = split/=/,$_;
-			$response{$name} = $val;
-	}
+   my %response;
+   my $buf = " " x 2048;
+   $buf = TCLinkGetEntireResponse($handle,$buf);
+   my @parts = split/\n/,$buf;
+   foreach (@parts)
+   {
+         my ($name,$val) = split/=/,$_;
+         $response{$name} = $val;
+   }
 
-	return %response;
+   TCLinkDestroy($handle);
+
+   return %response;
 }
 
 1;
+
 __END__
 # Below is stub documentation for your module. You better edit it!
 

@@ -1,3 +1,5 @@
+#!/usr/bin/perl
+
 use ExtUtils::MakeMaker;
 
 $usage = <<USAGE
@@ -24,11 +26,15 @@ $libs = $rsaref ? "-lssl -lcrypto -lRSAglue -lrsaref" : "-lssl -lcrypto";
 # See lib/ExtUtils/MakeMaker.pm for details of how to influence
 # the contents of the Makefile that is written.
 
+my $platform = `uname -sm`;
+chomp($platform);
+$platform =~ s/ /-/g;
+
 WriteMakefile(
     'NAME'		=> 'Net::TCLink',
     'VERSION_FROM'	=> 'TCLink.pm', 
     'PREREQ_PM'		=> {}, 
-    'DEFINE'		=> '-DTCLINK_VERSION=\"3.2.5\"', 
+    'DEFINE'		=> '-DTCLINK_VERSION=\"3.3-Perl-' . $platform . '\"', 
     'LIBS'	=> ["-L$openssl_path -L$openssl_path/lib $libs"],
     'INC' 	=> "-I$openssl_path/include"
 );

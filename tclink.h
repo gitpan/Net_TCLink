@@ -1,6 +1,11 @@
 /* tclink.h - Header file for TCLink library.
+ *
+ * TCLink Copyright (c) 2002 TrustCommerce.
+ * http://www.trustcommerce.com
+ * developer@trustcommerce.com
+ * (626) 744-7700
  * 
- * All code contained herein is copyright (c) 2001 TrustCommerce.
+ * All code contained herein is copyright (c) 2002 TrustCommerce.
  * It is distributed to our clients for your convenience; it is for
  * use by those authorized persons ONLY and for no other purpose beyond
  * integrated with TrustCommerce's payment gateway.
@@ -14,7 +19,17 @@
 #ifndef _TCLINK_H
 #define _TCLINK_H
 
-typedef int TCLinkHandle;
+#include "config.h"
+
+/* Handle passed to all TCLink functions.  A unique handle must be created
+ * for each concurrent thread, but the same handle can be shared by transactions
+ * occurring one after another (such as a for loop).
+ */
+#define TCLinkHandle void *
+
+/* Parameter names and values cannot exceed this size.
+ */
+#define PARAM_MAX_LEN 256
 
 /* Create a new TCLinkHandle.
  */
@@ -25,13 +40,12 @@ TCLinkHandle TCLinkCreate();
 void TCLinkPushParam(TCLinkHandle handle, const char *name, const char *value);
 
 /* Flush the parameters to the server.
- * Returns 1 on success, 0 on failure (can't connect).
  */
-int TCLinkSend(TCLinkHandle handle);
+void TCLinkSend(TCLinkHandle handle);
 
 /* Look up a response value from the server.
  * Returns NULL if no such parameter, or stores the value in 'value' and
- * returns a pointer to value.
+ * returns a pointer to value.  value should be at least PARAM_MAX_LEN in size.
  */
 char *TCLinkGetResponse(TCLinkHandle handle, const char *name, char *value);
 
@@ -41,13 +55,11 @@ char *TCLinkGetResponse(TCLinkHandle handle, const char *name, char *value);
  */
 char *TCLinkGetEntireResponse(TCLinkHandle handle, char *buf, int size);
 
+/* Destory a handle, ending that transaction and freeing the memory associated with it. */
+void TCLinkDestroy(TCLinkHandle handle);
+
 /* Store version string into buf.  Returns a pointer to buf. */
 char *TCLinkGetVersion(char *buf);
-
-/* The following function is for debugging ONLY and should not be used
- * in a production environment.  (Call with a NULL parameter to reset to default.)
- */
-void TCLinkForceHost(char *host);
 
 #endif
 

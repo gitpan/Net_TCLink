@@ -6,26 +6,30 @@
 
 MODULE = Net::TCLink		PACKAGE = Net::TCLink
 
-int
+void *
 TCLinkCreate()
 
 void 
 TCLinkPushParam(handle, name, value)
-	int handle
+	void * handle
 	char * name
 	char * value
 
-int 
+void 
 TCLinkSend(handle)
-	int handle
+	void * handle
 
 char *
-TCLinkGetEntireResponse(handle)
-	int handle
+TCLinkGetEntireResponse(handle,buf)
+	void * handle
+	char * buf
 	CODE:
-		char * x = (char*)malloc(1024 * 1024);
-		TCLinkGetEntireResponse(handle,x,1000);
-		RETVAL = x;
+		TCLinkGetEntireResponse(handle,buf,strlen(buf));
+		RETVAL = buf;
 	OUTPUT:
 		RETVAL
+
+void 
+TCLinkDestroy(handle)
+	void * handle
 

@@ -1,16 +1,16 @@
 <html>
 
 <head>
-<title> TrustCommerce Developer's Guide 2.0 </title>
+<title> TrustCommerce Developer's Guide 2.2 </title>
 </head>
 
 <body bgcolor=white text=black link=blue vlink=darkblue>
 
 <hr>
-<h1>TrustCommerce Developer's Guide 2.0</h1>
+<h1>TrustCommerce Developer's Guide 2.2.1</h1>
 <a href=http://www.trustcommerce.com>http://www.trustcommerce.com</a><br>
 <a href=mailto:developer@trustcommerce.com>developer@trustcommerce.com</a><p>
-September 14, 2001<br>
+January 30, 2002<br>
 
 <hr><p>
 
@@ -56,11 +56,13 @@ September 14, 2001<br>
 
 
 
-	The TCLink API is available for download from the Vault website, in the "Downloads" section.  Be sure to chose the version that matches the platform and language that you are using.  In particular, Win32 developers will probably always want the COM object, which contains support for a number of different languages on the Win32 platform, including ASP, ColdFusion, and Perl.
+	The TCLink API is available for download from the Vault website, in the "Downloads" section.  Be sure to chose the version that matches the platform and language that you are using.  In particular, Win32 developers will probably always want the COM object, which contains support for a number of different languages on the Win32 platform, including ASP, ColdFusion, Perl, PHP, and Python.
 <p>
 	Installation instructions specific to the TCLink version you've downloaded can be found in the readme file contained with the archive.  It will also contain a version of the TCTest program specific to the language you're using.  It's highly recommended that you look over this example, and even use it as the basis for your own code.  In fact, you should look over the code sample first to get a feel for the API, then return to reading this document.
 <p>
-	TCLink contains four key functions (create, pushparam, send, and response), plus a few extra helper functions.  The function names used below are from the Python version of TCLink, but other APIs are very similar.
+	Versions of TCLink for high-level languages (including PHP, Perl, Python, and Java) with built in support for hashes only have one method: Send().  This method accepts a single parameter, a hash of input values, and returns a single parameters, a hash of output values.  The only other method avaliable is GetVersion(), which returns the version string for TCLink.
+<p>
+	TCLink for other languages (including C/C++, Win32 COM, and CFX) contains four basic methods: Create(), PushParam(), Send(), and GetResponse().  C-style TCLink functions are described in the table below.
 <p>
 
 
@@ -73,6 +75,7 @@ September 14, 2001<br>
 	<tr><td> Send() </td><td> Submit a transaction to the gateway. </td></tr>
 	<tr><td> GetResponse() </td><td> Retrieve a response parameter from the transaction. </td></tr>
 	<tr><td> GetEntireResponse() </td><td> Get the entire response for the transaction, primarily use for debugging or logging. </td></tr>
+	<tr><td> Destroy() </td><td> Deallocate any memory associated with the transaction handle. </td></tr>
 	<tr><td> GetVersion() </td><td> Get the version string for the TCLink API in use. </td></tr>
 	</table>
 <p>
@@ -199,7 +202,8 @@ September 14, 2001<br>
 	<center><h3>Error</h3></center>
 	<table align=center border=1 cellpadding=5 bgcolor=#e0e0e0>
 	<tr><th>Errortype Value</th><th>Description</th></tr>
-	<tr><td>cantconnect</td><td>Couldn't connect to the TrustCommerce gateway.  Check your network connection and DNS capability.</td></tr>
+	<tr><td>cantconnect</td><td>Couldn't connect to the TrustCommerce gateway.  Check your Internet connection to make sure it is up.</td></tr>
+	<tr><td>dnsfailure</td><td>The TCLink software was unable to resolve DNS hostnames.  Make sure you have name resolving ability on the machine.</td></tr>
 	<tr><td>linkfailure</td><td>The connection was established, but was severed before the transaction could complete.</td></tr>
 	<tr><td>failtoprocess</td><td>The bank servers are offline and unable to authorize transactions.  Try again in a few minutes, or try a card from a different issuing bank.</td></tr>
 	</table>
@@ -282,35 +286,34 @@ A note on offlineauthcode: Some cards returned a declinetype of call.  This indi
 
 <h3>Preauth/Sale Example</h3>
 <pre>
-	tclink.CreateLink()
-	tclink.PushParam('custid',    'mycustid')
-	tclink.PushParam('password',  'mypass')
-	tclink.PushParam('action',    'preauth')
-	tclink.PushParam('amount',    '500')
-	tclink.PushParam('cc',        '4111111111111111')
-	tclink.PushParam('exp',       '0404')
-	tclink.PushParam('name',      'Jennifer Smith')
-	tclink.PushParam('address1',  '123 Test St.')
-	tclink.PushParam('city',      'Somewhere')
-	tclink.PushParam('state',     'CA')
-	tclink.PushParam('zip',       '90001')
-	tclink.PushParam('avs',       'y')
+	params = {
+		'custid':    'mycustid',
+		'password':  'mypasswd',
+		'action':    'preauth',
+		'amount':    '500',
+		'cc':        '4111111111111111',
+		'exp':       '0404',
+		'name':      'Jennifer Smith',
+		'address1':  '123 Test St.',
+		'city':      'Somewhere',
+		'state':     'CA',
+		'zip':       '90001',
+		'avs':       'y'
+	}
 
-	tclink.Send()
+	result = tclink.send(params)
 
-	status = tclink.GetResponse('status')
-
-	if (status == 'approved'):
+	if (result['status'] == 'approved'):
 		print  'Transaction was successful'
-	elif (status == 'decline'):
-		print 'Transaction declined.  Reason: ',  tclink.GetResponse('declinetype')
-	elif (status == 'baddata'):
-		print 'Improperly formatted data.  Offending fields: ', tclink.GetResponse('offenders')
+	elif (result['status'] == 'decline'):
+		print 'Transaction declined.  Reason: ', result['declinetype']
+	elif (result['status'] == 'baddata'):
+		print 'Improperly formatted data.  Offending fields: ', result['offenders']
 	else:
-		print 'An error occured: ', tclink.GetResponse('error')
+		print 'An error occured: ', result['errortype']
 
 	print 'Here are the full details:'
-	print tclink.GetEntireResponse()
+	print result
 </pre>
 <p>
 
@@ -336,20 +339,20 @@ A note on offlineauthcode: Some cards returned a declinetype of call.  This indi
 
 <h3>CVV Example</h3>
 <pre>
-	tclink.CreateLink()
+	params = {
+		'custid':    'mycustid',
+		'password':  'mypasswd',
+		'action':    'sale',
+		'amount':    '500',
+		'cc':        '4111111111111111',
+		'exp':       '0404',
+		'cvv':       '123'
+	}
 
-	tclink.PushParam('custid',    'mycustid')
-	tclink.PushParam('password',  'mypass')
-	tclink.PushParam('action',    'preauth')
-	tclink.PushParam('amount',    '500')
-	tclink.PushParam('cc',        '4111111111111111')
-	tclink.PushParam('exp',       '0404')
-	tclink.PushParam('cvv',       '123')
+	result = tclink.send(params)
 
-	tclink.Send()
-
-	if (tclink.GetResponse('status') == 'decline'):
-		if (tclink.GetResponse('declinetype') == 'cvv'):
+	if (result['status'] == 'decline')
+		if (result['declinetype'] == 'cvv')
 			print 'The CVV number is not valid.'
 </pre>
 <p>
@@ -370,33 +373,28 @@ A note on offlineauthcode: Some cards returned a declinetype of call.  This indi
 <p>
 
 
-	You can include all data read from the track, but only data between the start sentinel (a '%' character) and the end sentinel ('?') will be used.  Everything outside the start and end sentinels (such as the trailing LRC character) will be discarded.
+	You can include all data read from the track, but only data between the start sentinel (a '%' character for track1 and a ';' for track2) and the end sentinel ('?') will be used.  Everything outside the start and end sentinels (such as the trailing LRC character) will be discarded.
 <p>
-	The cc field is still required along with the track data, but if there is a mismatch between the information contained in the two fields it will generate a mismatch error.
+	The cc and exp fields may be passed, but are not required, since they will be extracted from the track data.  If you do pass one or both of these fields, however, and it does not match the data extracted from the track data, a status of baddata and an error mismatch will be returned.
 <p>
-	Generally AVS and address data are not necessary for swiped transactions, however you may still pass these parameters as usual, if you like.
+	If both track1 and track2 data are passed, only the system will choose track1 by default for the authorization, and track2 will be discarded.
+<p>
+	Generally AVS and address data are not necessary for swiped transactions, but you may pass them anyway if you choose.
 <p>
 
 
 <h3>Card Present Example</h3>
 <pre>
-	tclink.CreateLink()
+	params = {
+		'custid':    'mycustid',
+		'password':  'mypasswd',
+		'action':    'sale',
+		'amount':    '500'
+	}
 
-	tclink.PushParam('custid',    'mycustid')
-	tclink.PushParam('password',  'mypass')
-	tclink.PushParam('action',    'sale')
-	tclink.PushParam('amount',    '500')
-	tclink.PushParam('cc',        '4111111111111111')
-	tclink.PushParam('exp',       '0404')
+	params['track1'] = CardReader.readMagStripe()
 
-	track1_data = CardReader.ReadMagStripe()
-	tclink.PushParam('track1',    track1_data);
-
-	tclink.Send()
-
-	if (tclink.GetResponse('status') == 'baddata'):
-		if (tclink.GetResponse('error') == 'mismatch'):
-			print 'The credit card number does not match the magnetic stripe data.'
+	result = tclink.send(params)
 </pre>
 <p>
 
@@ -426,17 +424,17 @@ A note on offlineauthcode: Some cards returned a declinetype of call.  This indi
 
 <h3>ACH Example</h3>
 <pre>
-	tclink.CreateLink()
+	params = {
+		'custid':    'mycustid',
+		'password':  'mypass',
+		'action':    'sale',
+		'media':     'ach',
+		'amount':    '1000',
+		'routing':   '123456789',
+		'account':   '55544433322211'
+	}
 
-	tclink.PushParam('custid',    'mycustid')
-	tclink.PushParam('password',  'mypass')
-	tclink.PushParam('action',    'sale')
-	tclink.PushParam('media',     'ach')
-	tclink.PushParam('amount',    '1000')
-	tclink.PushParam('routing',   '123456789')
-	tclink.PushParam('account',   '55544433322211')
-
-	tclink.Send()
+	tclink.send(params)
 </pre>
 <p>
 
@@ -472,16 +470,16 @@ A note on offlineauthcode: Some cards returned a declinetype of call.  This indi
 
 <h3>Credit Example</h3>
 <pre>
-	tclink.CreateLink()
+	params = {
+		'custid':    'mycustid',
+		'password':  'mypass',
+		'action':    'credit',
+		'transid':   '001-0000111101'
+	}
 
-	tclink.PushParam('custid',    'mycustid')
-	tclink.PushParam('password',  'mypass')
-	tclink.PushParam('action',    'credit')
-	tclink.PushParam('transid',   '001-0000111101')
+	tclink.send(params)
 
-	tclink.Send()
-
-	if (tclink.GetResponse('status') != 'accepted')
+	if (result['status'] != 'accepted')
 		print 'Credit unsuccesful.'
 </pre>
 <p>
@@ -525,34 +523,37 @@ A note on offlineauthcode: Some cards returned a declinetype of call.  This indi
 
 <h3>Billing ID Example</h3>
 <pre>
-	tclink.CreateLink()
-
 	# First, store a new ID.
-	tclink.PushParam('custid',    'mycustid')
-	tclink.PushParam('password',  'mypass')
-	tclink.PushParam('action',    'store')
-	tclink.PushParam('cc',        '4111111111111111')
-	tclink.PushParam('exp',       '0404')
-	tclink.PushParam('name',      'Jennifer Smith')
+	params = {
+		'custid':    'mycustid',
+		'password':  'mypass',
+		'action':    'store',
+		'cc':        '4111111111111111',
+		'exp':       '0404',
+		'name':      'Jennifer Smith'
+	}
 
-	tclink.Send()
+	result = tclink.send(params)
 
-	if (tclink.GetResponse('status') == 'accepted'):
+	if (result['status'] == 'accepted'):
 		# It was succesfully stored.  Now try running a transaction on the new ID.
-		billingid = tclink.GetResponse('billingid', billingid);
-		tclink.PushParam('custid',    'mycustid')
-		tclink.PushParam('password',  'mypass')
-		tclink.PushParam('action',    'sale')
-		tclink.PushParam('billingid', billingid)
-		tclink.PushParam('amount',    '995')
-		tclink.Send()
-		print 'Status is: ', tclink.GetResponse('status')
+		billingid = result['billingid']
+		params2 = {
+			'custid':    'mycustid',
+			'password':  'mypass',
+			'action':    'sale',
+			'billingid': billingid,
+			'amount':    '995'
+		}
+		tclink.send(params2);
 		# Unstore the ID now that we are done.
-		tclink.PushParam('custid',    'mycustid')
-		tclink.PushParam('password'  'mypass')
-		tclink.PushParam('action'    'unstore')
-		tclink.PushParam('billingid' billingid)
-		tclink.Send()
+		params3 = {
+			'custid':    'mycustid',
+			'password':  'mypass',
+			'action':    'unstore',
+			'billingid': billingid
+		}
+		tclink.send(params3)
 </pre>
 <p>
 
@@ -586,35 +587,35 @@ Payments is also optional; left blank or set to zero it will continue the billin
 
 <h3>Recurring Billing Example</h3>
 <pre>
-	tclink.CreateLink()
+	params = {
+		'custid':    'mycustid',
+		'password':  'mypass',
+		'action':    'store',
+		'cc':        '4111111111111111',
+		'exp':       '0404',
+		'name':      'Jennifer Smith',
+		'amount':    '1200'
+	}
 
-	tclink.PushParam('custid',    'mycustid')
-	tclink.PushParam('password',  'mypass')
-	tclink.PushParam('action',    'store')
-	tclink.PushParam('cc',        '4111111111111111')
-	tclink.PushParam('exp',       '0404')
-	tclink.PushParam('name',      'Jennifer Smith')
-	tclink.PushParam('amount',    '1200')
-
-	mode = ChooseSubscriptionMode();
+	mode = chooseSubscriptionMode()
 
 	if (mode == 1):
 		# Make a payment every day, infinitely (or until someone manually disables it)
-		tclink.PushParam('cycle',   '1d')
+		params['cycle'] = '1d';
 	elif (mode == 2):
 		# Make a payment once a month for one year
-		tclink.PushParam('cycle',   '1m')
-		tclink.PushParam('payments','12')
+		params['cycle'] = '1m';
+		params['payments'] = '12';
 	elif (mode == 3):
 		# Make a payment every six weeks, starting one week from now
-		tclink.PushParam('cycle',   '6w')
-		tclink.PushParam('start',   '1w')
+		params['cycle'] = '62';
+		params['start'] = '1w';
 	elif (mode == 4):
 		# Make anual payments, and don't start until September 1, 2002
-		tclink.PushParam('cycle',   '1y')
-		tclink.PushParam('start',   '2003-09-02')
+		params['cycle'] = '1y';
+		params['start'] = '2003-09-02';
 
-	tclink.Send()
+	tclink.send(params)
 </pre>
 
 <p>
@@ -648,28 +649,30 @@ Payments is also optional; left blank or set to zero it will continue the billin
 
 <h3>Wallet Example</h3>
 <pre>
-	tclink.CreateLink()
-
 	# First, store a new ID with the wallet enabled.
-	tclink.PushParam('custid',    'mycustid')
-	tclink.PushParam('password',  'mypass')
-	tclink.PushParam('action',    'store')
-	tclink.PushParam('cc',        '4111111111111111')
-	tclink.PushParam('exp',       '0404')
-	tclink.PushParam('name',      'Jennifer Smith')
-	tclink.PushParam('wallet',    'y')
+	params = {
+		'custid':    'mycustid',
+		'password':  'mypass',
+		'action':    'store',
+		'cc':        '4111111111111111',
+		'exp':       '0404',
+		'name':      'Jennifer Smith',
+		'wallet':    'y'
+	}
 
-	tclink.Send()
+	result = tclink.send(params)
 
-	if (tclink.GetResponse('status') == 'approved'):
+	if (result['status'] == 'approved'):
 		# We have a new wallet at our disposal.  Run a micropayment on it.
-		billingid = tclink.GetResponse('billingid');
-		tclink.PushParam('custid',    'mycustid')
-		tclink.PushParam('password',  'mypass')
-		tclink.PushParam('action',    'walletsale')
-		tclink.PushParam('billingid', billingid);
-		tclink.PushParam('amount',    '995')
-		tclink.Send()
+		billingid = result['billingid']
+		params2 = {
+			'custid':    'mycustid',
+			'password':  'mypass',
+			'action':    'walletsale',
+			'billingid': billingid,
+			'amount':    '995'
+		}
+		tclink.send(params)
 </pre>
 <p>
 
@@ -731,36 +734,36 @@ Payments is also optional; left blank or set to zero it will continue the billin
 
 <h3>Fulfillment Example</h3>
 <pre>
-	tclink.CreateLink()
+	params = {
+		'custid':           'mycustid',
+		'password':         'mypass',
+		'action':           'preauth',
+		'cc':               '4111111111111111',
+		'exp':              '0404',
+		'amount':           '1979',  # Total of items, tax, and shipping
+		'name':             'Jennifer Smith',
+		'address1':         '123 Test St.',
+		'city':             'Somewhere',
+		'state':            'CA',
+		'zip':              '90001',
+		'shiptosame':       'y',     # Shipping address is same as billing address
 
-	tclink.PushParam('custid',           'mycustid')
-	tclink.PushParam('password',         'mypass')
-	tclink.PushParam('action',           'preauth')
-	tclink.PushParam('cc',               '4111111111111111')
-	tclink.PushParam('exp',              '0404')
-	tclink.PushParam('amount',           '1883')    # Total of items, tax, and shipping
-	tclink.PushParam('name',             'Jennifer Smith')
-	tclink.PushParam('address1',         '123 Test St.')
-	tclink.PushParam('city',             'Somewhere')
-	tclink.PushParam('state',            'CA')
-	tclink.PushParam('zip',              '90001')
-	tclink.PushParam('shiptosame',       'y')     # Shipping address is same as billing address
+		'numitems':         '2',     # Two total product codes will be described
+		'shippingcode':     'OVRNGT',
+		'shippinghandling': '695',
 
-	tclink.PushParam('numitems',         '2')     # Two total product codes will be described
-	tclink.PushParam('shippingcode',     'OVRNGT')
-	tclink.PushParam('shippinghandling', '695')
+		'productcode1':     'PCODE1',
+		'quantity1':        '3',
+		'price1':           '600',   # Item 1 costs $2.00, and there are 3 of them
+		'tax1':             '144',   # Tax of 8%
 
-	tclink.PushParam('productcode1',     'PCODE1')
-	tclink.PushParam('quantity1',        '3')
-	tclink.PushParam('price1',           '600')   # Item 1 costs $2.00, and there are 3 of them
-	tclink.PushParam('tax1',             '48')    # Tax of 8%
+		'productcode2':     'PCODE2',
+		'quantity2':        '1',
+		'price2':           '500',   # Item 1 costs $5.00, there's only one
+		'tax2':             '40'     # Tax of 8%
+	}
 
-	tclink.PushParam('productcode2',     'PCODE2')
-	tclink.PushParam('quantity2',        '1')
-	tclink.PushParam('price2',           '500')   # Item 1 costs $5.00, there's only one
-	tclink.PushParam('tax2',             '40')    # Tax of 8%
-
-	tclink.Send()
+	tclink.send(params)
 </pre>
 <p>
 
@@ -919,22 +922,24 @@ Payments is also optional; left blank or set to zero it will continue the billin
 <a name=testdata></a><h2>Appendix A - Test Data</h2>
 
 
-	While testing, you may wish to experiment with the different responses that the gateway can generate.  The following test card numbers will produce an approval, and have address data as listed, for testing AVS.  If you wish to test CVV, the code listed int he right-hand column is the correct CVV code, Other valid credit cards will work, but will produce a 'U' AVS code.  All of these cards accept "0404" as the expiration date.
+	While testing, you may wish to experiment with the different responses that the gateway can generate.  The following test card numbers will produce an approval, and have address data as listed, for testing AVS.  If you wish to test CVV, the code listed int he right-hand column is the correct CVV code, Other valid credit cards will work, but will produce a 'U' AVS code.<p>
+	Please note: these cards ONLY work on transactions flagged as demo, or while your account is in "test" mode!  For a live transaction, they will all return a decline with a declinetype of carderror.
 
 
-	<center><h3>TCLink Function Names</h3></center>
+	<center><h3>Test Cards - Approved</h3></center>
 	<table align=center border=1 cellpadding=5 bgcolor=#e0e0e0>
-	<tr><th>Card Number</th><th>Exp</th><th>Address</th><th>City</th><th>State</th><th>Zip</th><th>CVV</th></tr>
-	<tr><td>4111111111111111</td><td>04/04</td><td>123 Test St.</td><td>Somewhere</td><td>CA</td><td>90001</td><td>123</td></tr>
-	<tr><td>5411111111111115</td><td>04/04</td><td>4000 Main St.</td><td>Anytown</td><td>AZ</td><td>85001</td><td>777</td></tr>
-	<tr><td>6011111111111117</td><td>04/04</td><td>6789 Green Ave.</td><td>Nowhere</td><td>MA</td><td>12345</td><td>606</td></tr>
-	<tr><td>341111111111111</td><td>04/04</td><td>12 Colorado Blvd.</td><td>Elsewhere</td><td>IL</td><td>54321</td><td>4000</td></tr>
+	<tr><th>Card Type</th><th>Card Number</th><th>Exp</th><th>Address</th><th>City</th><th>State</th><th>Zip</th><th>CVV</th></tr>
+	<tr><td>Visa</td><td>4111111111111111</td><td>04/04</td><td>123 Test St.</td><td>Somewhere</td><td>CA</td><td>90001</td><td>123</td></tr>
+	<tr><td>Mastercard</td><td>5411111111111115</td><td>04/04</td><td>4000 Main St.</td><td>Anytown</td><td>AZ</td><td>85001</td><td>777</td></tr>
+	<tr><td>American Express</td><td>341111111111111</td><td>04/04</td><td>12 Colorado Blvd.</td><td>Elsewhere</td><td>IL</td><td>54321</td><td>4000</td></tr>
+	<tr><td>Discover</td><td>6011111111111117</td><td>04/04</td><td>6789 Green Ave.</td><td>Nowhere</td><td>MA</td><td>12345</td><td> - </td></tr>
+	<tr><td>Diner's Club</td><td>36484444444446</td><td>04/04</td><td>7390 Del Mar Blvd.</td><td>Atown</td><td>NY</td><td>01101</td><td> - </td></tr>
 	</table>
 <p>
 	The following card numbers will generate a decline, with the declinetype listed as follows.  You may use this to test code which takes different paths dependant upon the type of decline.
 
 
-	<center><h3>TCLink Function Names</h3></center>
+	<center><h3>Test Cards - Declined</h3></center>
 	<table align=center border=1 cellpadding=5 bgcolor=#e0e0e0>
 	<tr><th>Card Number</th><th>Exp</th><th>DeclineType</th></tr>
 	<tr><td>4012345678909</td><td>04/04</td><td>decline</td>
@@ -952,13 +957,11 @@ Payments is also optional; left blank or set to zero it will continue the billin
 
 	Details about installing and troubleshooting TCLink specific to your development platform can be found in the documentation included with the TCLink archive.
 <p>
-	Once you are able to connect to the TC gateway, you should be able to diagnose parameter-related issues using the status, error, declinetype, and errortype parameters returned by the gateway.  There is one response which indicates a more generic error, and that's an error of cantconnect.  A few common reasons for cantconnect errors are described below.
+	Once you are able to connect to the TC gateway, you should be able to diagnose parameter-related issues using the status, error, declinetype, and errortype parameters returned by the gateway.  There is one response which indicates a more generic error, and that's an error of <b>cantconnect</b>.  First, check the computer's network connection; can you ping machines on the Internet, by IP or by name?
 <p>
-	First, check the computer's network connection; can you ping machines on the Internet, by IP or by name?
+	The most common network connectivity error is that your target computer may be behind a firewall.  TCLink uses the HTTPS port (443/tcp) for network communications; you can check whether this port is open from the target machine by typing "telnet vault.trustcommerce.com 443" at a UNIX command prompt, or else by loading a web browser on the target machine and attempting to visit https://vault.trustcommerce.com directly.  If you timeout attempting to make the connection, but your Internet connection is working otherwise, then you may be firewalled.  Speak to your network administrator about allowing outbound TCP traffic on port 443.
 <p>
-	One common network connectivity error is that your target computer may be behind a firewall.  TCLink uses the HTTPS port (443/tcp) for network communications; you can check whether this port is open from the target machine by typing "telnet vault.trustcommerce.com 443" at a UNIX command prompt, or else by loading a web browser on the target machine and attempting to visit https://vault.trustcommerce.com directly.  If you timeout attempting to make the connection, but your Internet connection is working otherwise, then you may be firewalled.  Speak to your network administrator about allowing outbound TCP traffic on port 443.
-<p>
-	Another common problem is the lack of domain name (DNS) resolution.  The target machine must be able to resolve the trustcommerce.com domain; try typing "host trustcommerce.com" from a UNIX command prompt.  If you don't get a response, or get an error, then the machine cannot resolve DNS information and TCLink will not be able to connect to the TC gateway.  Speak to your sysadmin about making domain name resolution available to your target host.
+	Another common problem is the lack of domain name (DNS) resolution.  In some cases this will result in an errortype <b>dnsfailure</b>.  (Not always; the TCLink software will sometimes fall back to hardcoded IP addresses for established accounts.  But this method is insecure and error-prone, and is used only as a last resort to keep a system with temporary DNS issues up and running during the outage.)  The target machine must be able to resolve the trustcommerce.com domain; try typing "host trustcommerce.com" from a UNIX command prompt.  If you don't get a response, or get an error, then the machine cannot resolve DNS information and TCLink will not be able to connect to the TC gateway.  Speak to your sysadmin about making domain name resolution available to your target host.
 <p>
 
 
@@ -1032,7 +1035,7 @@ Payments is also optional; left blank or set to zero it will continue the billin
 <p>
 
 <hr>
-<center><font size=-1><i>Copyright &copy; 2001 TrustCommerce</i></font></center>
+<center><font size=-1><i>Copyright &copy; 2002 TrustCommerce</i></font></center>
 
 </body>
 </html>

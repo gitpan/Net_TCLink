@@ -1,6 +1,11 @@
 /* tclink.c - Library code for the TCLink client API.
+ *
+ * TCLink Copyright (c) 2002 TrustCommerce.
+ * http://www.trustcommerce.com
+ * developer@trustcommerce.com
+ * (626) 744-7700
  * 
- * All code contained herein is copyright (c) 2001 TrustCommerce.
+ * All code contained herein is copyright (c) 2002 TrustCommerce.
  * It is distributed to our clients for your convenience; it is for
  * use by those authorized persons ONLY and for no other purpose beyond
  * integrated with TrustCommerce's payment gateway.
@@ -26,39 +31,26 @@
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <unistd.h>
-#include <malloc.h>
 #include <stdlib.h>
 #include <fcntl.h>
 #include <signal.h>
 
-#ifdef USE_SSLEAY
-#include <ssl/crypto.h>
-#include <ssl/x509.h>
-#include <ssl/pem.h>
-#include <ssl/ssl.h>
-#include <ssl/err.h>
-#else
 #include <openssl/crypto.h>
 #include <openssl/x509.h>
 #include <openssl/pem.h>
 #include <openssl/ssl.h>
 #include <openssl/err.h>
-#ifdef NEEDS_RAND_SEED
 #include <openssl/rand.h>
-#endif
-#endif
 
-#define DEBUG_MSG         0    /* set to 1 for lots of annoying printf()'s */
+#define DEFAULT_HOST    "gateway.trustcommerce.com"
+#define TIMEOUT         40     /* seconds */
 
-#define TIMEOUT           40   /* in seconds */
+#define TC_BUFF_MAX     16000
+#define TC_LINE_MAX     ((PARAM_MAX_LEN * 2) + 2)
 
-#define DEFAULT_HOST       "gateway.trustcommerce.com"
-
-char *tclink_host  = DEFAULT_HOST;
-int tclink_port    = 443;
-
-#define MAX_STRING        512
-#define BUFF_MAX          32000
+char *tclink_version    = TCLINK_VERSION;  /* TCLINK_VERSION is defined in Makefile */
+char *tclink_host       = DEFAULT_HOST;
+int tclink_port         = 443;
 
 /*************************************************/
 /* Data structures used only within this module. */
@@ -73,18 +65,32 @@ typedef struct param_data
 	struct param_data *next;
 } param;
 
-static param *send_param_list = NULL, *send_param_tail = NULL;
-static param *recv_param_list = NULL;
+typedef struct _TCLinkCon
+{
+	/* Connection data */
+	int *ip;
+	int num_ips;
+	int sd;
 
-/* Variables used by SSL functions. */
-static int ssl_inited = 0;
-static int my_sd = -1;
-static SSL_METHOD *meth;
-static SSL_CTX *ctx;
-static SSL *ssl;
-static X509 *tc_cert = NULL;
+	/* SSL encryption */
+	X509 *tc_cert;
+	SSL_METHOD *meth;
+	SSL_CTX *ctx;
+	SSL *ssl;
 
-/* the TrustCommerce certificate */
+	/* Transaction parameters, sent and received */
+	param *send_param_list, *send_param_tail;
+	param *recv_param_list;
+
+	/* Connection status */
+	int is_error;
+	int pass;
+	time_t start_time;
+	int dns;
+
+} TCLinkCon;
+
+/* The TrustCommerce certificate. */
 unsigned char cert_data[540]={
 0x30,0x82,0x02,0x18,0x30,0x82,0x01,0x81,0x02,0x01,0x02,0x30,0x0D,0x06,0x09,0x2A,
 0x86,0x48,0x86,0xF7,0x0D,0x01,0x01,0x04,0x05,0x00,0x30,0x55,0x31,0x0B,0x30,0x09,
@@ -121,10 +127,6 @@ unsigned char cert_data[540]={
 0x72,0xED,0xA1,0x7B,0xE4,0x8B,0x2B,0x18,0x39,0xEA,0xDE,0x54,0x69,0xE7,0x35,0xDB,
 0x8F,0xFB,0x34,0xC7,0xF7,0xB3,0x6A,0x9A,0xE5,0x27,0xA4,0x0F};
 
-/* Variables used by internal TCLink functions. */
-static char buffer[BUFF_MAX];
-static char destbuff[BUFF_MAX];
-static int is_error;
 
 /*************************************
  * Internal functions, not exported. *
@@ -136,60 +138,93 @@ static int number(int min, int max)
 	return (rand() % (max - min + 1)) + min;
 }
 
-/* Add a parameter-value pair to the recieved list. */
-static void AddRecvParam(const char *name, const char *value)
+/* Safe string copy and append functions. */
+#define SAFE_COPY(d, s)    safe_copy((d), (s), sizeof(d));
+#define SAFE_APPEND(d, s)  safe_append((d), (s), sizeof(d));
+
+void safe_copy(char *dst, const char *src, int size)
 {
-	param *p = (param *)malloc(sizeof(param));
+  int len = strlen(src);
+  if (len < size)
+    strcpy(dst, src);
+  else {
+    strncpy(dst, src, size - 1);
+    dst[size-1] = 0;
+  }
+}
+
+void safe_append(char *dst, const char *src, int size)
+{
+  int dlen = strlen(dst);
+  int slen = strlen(src);
+	int avail = size - dlen;
+	if (avail < 1)
+		return;
+
+  if (slen < avail)
+    strcpy(dst+dlen, src);
+  else {
+    strncpy(dst+dlen, src, avail - 1);
+    dst[size-1] = 0;
+  }
+}
+
+/* Add a parameter-value pair to the recieved list. */
+static void AddRecvParam(TCLinkCon *c, const char *name, const char *value)
+{
+	param *p;
+
+	if (name[0] == 0 || value[0] == 0)
+		return;
+
+	p = (param *)malloc(sizeof(param));
 	p->name = strdup(name);
 	p->value = strdup(value);
-	p->next = recv_param_list;
-	recv_param_list = p;
+	p->next = c->recv_param_list;
+	c->recv_param_list = p;
 }
 
 /* Add a string to the received list. */
-static int AddRecvString(char *string)
+static int AddRecvString(TCLinkCon *c, char *string)
 {
-	char name[MAX_STRING], value[MAX_STRING];
-
 	char *ptr = strchr(string, '=');
 	if (ptr == NULL)
 		return 0;
 
 	*ptr = 0;
-	strcpy(name, string);
-	strcpy(value, ptr+1);
+	AddRecvParam(c, string, ptr+1);
 
-	if (name[0] == 0 || value[0] == 0)
-		return 0;
-
-	AddRecvParam(name, value);
 	return 1;
 }
 
 /* Deallocate the send list. */
-static void ClearSendList()
+static void ClearSendList(TCLinkCon *c)
 {
 	param *p, *next;
-	for (p = send_param_list; p; p = next)
+	for (p = c->send_param_list; p; p = next)
 	{
 		next = p->next;
+		free(p->name);
+		free(p->value);
 		free(p);
 	}
 
-	send_param_list = send_param_tail = NULL;
+	c->send_param_list = c->send_param_tail = NULL;
 }
 
 /* Deallocate the recv list. */
-static void ClearRecvList()
+static void ClearRecvList(TCLinkCon *c)
 {
 	param *p, *next;
-	for (p = recv_param_list; p; p = next)
+	for (p = c->recv_param_list; p; p = next)
 	{
 		next = p->next;
+		free(p->name);
+		free(p->value);
 		free(p);
 	}
 
-	recv_param_list = NULL;
+	c->recv_param_list = NULL;
 }
 
 /* Open a socket to the host_ip specified.  Returns the socket's file
@@ -198,14 +233,10 @@ static void ClearRecvList()
  * and wait for the connection; you'll need to select() on the socket later to see
  * if it opened successfully.
  */
-static int BeginConnection(int host_ip)
+static int BeginConnection(TCLinkCon *c, int host_ip)
 {
 	struct sockaddr_in sa;
 	int sd;
-
-#if DEBUG_MSG
-	printf("Trying %u.%u.%u.%u\n", host_ip & 0xff, host_ip >> 8 & 0xff, host_ip >> 16 & 0xff, host_ip >> 24 & 0xff);
-#endif
 
 	sd = socket(AF_INET, SOCK_STREAM, 0);
 	if (sd < 0)
@@ -228,45 +259,45 @@ static int BeginConnection(int host_ip)
  * reason (such as the host on the other end not using SSL), it will return 0 for
  * failure.  Success returns 1.
  */
-static int FinishConnection(int sd)
+static int FinishConnection(TCLinkCon *c, int sd)
 {
 	int ssl_connected, is_error, errcode, res, n;
 	struct pollfd pfd;
 	X509 *server_cert;
-	time_t start_time, remaining;
+	time_t start, remaining;
 
 	/* check if socket has connected successfully */
 	int val;
-	socklen_t size = 4;
+	int /*socklen_t*/ size = 4;
 	getsockopt(sd, SOL_SOCKET, SO_ERROR, &val, &size);
 	if (val != 0)
 		return 0;
 
-	ssl = SSL_new(ctx);
-	if (!ssl)
+	c->ssl = SSL_new(c->ctx);
+	if (!c->ssl)
 		return 0;
 
-	SSL_set_fd(ssl, sd);
+	SSL_set_fd(c->ssl, sd);
 
 	ssl_connected = 0;
 	is_error = 0;
-	start_time = time(0);
+	start = time(0);
 
 	while (!ssl_connected && !is_error)
 	{
-		remaining = 5 - (time(0) - start_time);
+		remaining = 5 - (time(0) - start);
 		if (remaining <= 0) {
 			is_error = 1;
 			break;
 		}
 
-		res = SSL_connect(ssl);
+		res = SSL_connect(c->ssl);
 
-		ssl_connected = ((res == 1) && SSL_is_init_finished(ssl));
+		ssl_connected = ((res == 1) && SSL_is_init_finished(c->ssl));
 
 		if (!ssl_connected)
 		{
-			errcode = SSL_get_error(ssl, res);
+			errcode = SSL_get_error(c->ssl, res);
 			switch (errcode)
 			{
 				case SSL_ERROR_NONE:
@@ -297,42 +328,18 @@ static int FinishConnection(int sd)
 	}
 
 	if (is_error) {
-		SSL_free(ssl);
+		SSL_free(c->ssl);
 		return 0;
 	}
    
 	fcntl(sd, F_SETFL, 0);           /* make the socket blocking again */
 
 	/* verify that server certificate is authentic */
-	server_cert = SSL_get_peer_certificate(ssl);
-	if (!server_cert || (X509_cmp(server_cert, tc_cert) != 0)) {
-		SSL_free(ssl);
+	server_cert = SSL_get_peer_certificate(c->ssl);
+	if (!server_cert || (X509_cmp(server_cert, c->tc_cert) != 0)) {
+		SSL_free(c->ssl);
 		return 0;
 	}
-
-#if DEBUG_MSG
-	/* some code to spit out the cipher and server certificate */
-	printf ("SSL connection using %s\n", SSL_get_cipher (ssl));
-  
-	server_cert = SSL_get_peer_certificate (ssl);
-	if (server_cert)
-	{
-		char *str;
-		printf ("Server certificate:\n");
-
-		str = X509_NAME_oneline (X509_get_subject_name (server_cert),0,0);
-		if (str) {
-			printf ("\t subject: %s\n", str);
-			Free (str);
-		}
-
-		str = X509_NAME_oneline (X509_get_issuer_name  (server_cert),0,0);
-		if (str) {
-			printf ("\t issuer: %s\n", str);
-			Free (str);
-		}
-	}
-#endif
 
 	X509_free(server_cert);
 
@@ -346,13 +353,13 @@ static int FinishConnection(int sd)
  * As this function calls FinishConnection(), you shouldn't need to do anything special
  * after it returns success - the socket is set up and ready for use.
  */
-static int CheckConnection(int *sd, int num_sd)
+static int CheckConnection(TCLinkCon *c, int *sd, int num_sd)
 {
 	fd_set wr_set, err_set;
 	struct timeval tv;
 	int max_sd = -1, i;
 
-	tv.tv_sec = 3;        /* wait 3 seconds for something to happen */
+	tv.tv_sec = 3;        /* wait 3 seconds for soc->mething to happen */
 	tv.tv_usec = 0;
 
 	/* build the fd_sets used for select() */
@@ -373,6 +380,7 @@ static int CheckConnection(int *sd, int num_sd)
 
 	for (i = 0; i < num_sd; i++)
 		if (sd[i] >= 0)
+		{
 			if (FD_ISSET(sd[i], &err_set))
 			{
 				/* error - close the socket and mark it defunct */
@@ -382,9 +390,9 @@ static int CheckConnection(int *sd, int num_sd)
 			else if (FD_ISSET(sd[i], &wr_set))
 			{
 				/* socket has opened! try to negotiate SSL */
-				if (FinishConnection(sd[i])) {
+				if (FinishConnection(c, sd[i])) {
 					/* socket is ready to go, so return success */
-					my_sd = sd[i];
+					c->sd = sd[i];
 					return i;
 				}
 				else {
@@ -393,95 +401,125 @@ static int CheckConnection(int *sd, int num_sd)
 					sd[i] = -1;
 				}
 			}
+		}
 
 	/* if we get here, nothing much interesting happened during those 3 seconds */
 	return -1;
 }
 
-/* Open a connection to one of the TrustCommerce gateway servers. */
-static int Connect(char prefer_host)
+void do_SSL_randomize()
 {
-	struct hostent *he;
+	enum { RAND_VALS = 32 };
+	int randbuf[RAND_VALS];
+	char fname[512];
+	int use_rand_file;
+	time_t t;
+	int i, c;
 
-	time_t start_time;
+	/* if they have a /dev/urandom we can skip this function */
+	if (RAND_status() != 0)
+		return;
+
+	t = time(0);
+	RAND_seed((char *)&t, sizeof(time_t));
+
+	/* have they specified a random file with RANDFILE environment variable? */
+	use_rand_file = RAND_file_name(fname, sizeof(fname)) ? 1 : 0;
+	if (use_rand_file)
+		RAND_load_file(fname, 4096);
+
+	/* stuff it with packets of random numbers until it is satisfied */
+	for (i = 0; i < 256 && RAND_status() == 0; i++)
+	{
+		for (c = 0; c < RAND_VALS; c++)
+			randbuf[c] = rand();
+		RAND_seed((char *)randbuf, sizeof(int) * RAND_VALS);
+	}
+}
+
+/* Open a connection to one of the TrustCommerce gateway servers. */
+static int Connect(TCLinkCon *c, int host_hash)
+{
+	struct hostent default_he;
+	char *addr_list[3]; int addr[2];
+	struct hostent *he;
+	unsigned int **gw;
+
 	enum { MAX_HOSTS = 32 };
 	time_t last_connect[MAX_HOSTS];
 	int sd[MAX_HOSTS];
-	int num_sd = 0, num_hosts;
-	int host, pref_host_ip = 0, pref_host_try = 0, i;
+	int num_sd = 0;
+	int host;
 
-	my_sd = -1;
-	is_error = 0;
+	int i, j, sort, sort_val;
 
-	/* do some SSL setup */
-	if (ssl_inited < 1)
+	unsigned char *cert_data_ptr = cert_data;
+
+	c->sd = -1;
+	c->is_error = 0;
+
+	srand(time(0));
+
+	/* These are used as BACKUP ONLY if the DNS if offline. */
+	addr[0] = inet_addr("204.212.133.5");
+	addr[1] = inet_addr("216.34.194.254");
+	addr_list[0] = (char *)&addr[0];
+	addr_list[1] = (char *)&addr[1];
+	addr_list[2] = 0;
+	default_he.h_addr_list = addr_list;
+
+	/* determine IP addresses of gateway */
+	if (!c->ip) 
 	{
-#ifdef NEEDS_RAND_SEED
-		/* Somewhat insecure hack to make OpenSSL work on legacy systems
-		 * that don't have a /dev/random or /dev/urandom. */
-		char rand_buf[32];
-		srand(time(0));
-		for (int i = 0; i < sizeof(rand_buf); i++)
-			rand_buf[i] = rand();
-		RAND_seed(rand_buf, sizeof(rand_buf));
-#endif
-		SSLeay_add_ssl_algorithms();
-		meth = SSLv3_client_method();
-		ssl_inited = 1;
+		he = gethostbyname(tclink_host);
+		if (he)
+			c->dns = 1;
+		else {
+			/* fall back to hardcoded IPs in an emergency */
+			c->dns = 0;
+			he = &default_he;
+		}
+
+		for (c->num_ips = 0; he->h_addr_list[c->num_ips]; c->num_ips++)
+			;
+
+		c->ip = (int *)malloc(c->num_ips * sizeof(int));
+		gw = (int unsigned **)he->h_addr_list;
+
+		/* sort the IP address list before storing it */
+		for (i = 0; i < c->num_ips; i++)
+		{
+			sort = 0; sort_val = *gw[0];
+			for (j = 1; j < c->num_ips; j++)
+				if (*gw[j] > sort_val)
+				{
+					sort = j;
+					sort_val = *gw[j];
+				}
+
+			c->ip[i] = sort_val;
+			*gw[sort] = 0;
+		}
 	}
 
-	if (ssl_inited < 2) {
-		ctx = SSL_CTX_new(meth);
-		if (!ctx) return 0;
-		ssl_inited = 2;
+	/* do some SSL setup */
+	if (!c->meth)
+	{
+		do_SSL_randomize();        /* handle systems without /dev/urandom */
+		SSLeay_add_ssl_algorithms();
+		c->meth = SSLv3_client_method();
+	}
+
+	if (!c->ctx)
+	{
+		c->ctx = SSL_CTX_new(c->meth);
+		if (!c->ctx) return 0;
 	}
 
 	/* create the valid certificate */
-	if (tc_cert == NULL) {
-		unsigned char *ptr = cert_data;
-		tc_cert = d2i_X509(NULL, &ptr, 540);
-		if (!tc_cert) return 0;
-	}
-
-	/* Look up the prefered host first */
-	if (prefer_host > 0)
-	{
-		char hbuf[64];
-		sprintf(hbuf, "gw%c.trustcommerce.com", prefer_host);
-
-		he = gethostbyname(hbuf);
-		if (he)
-			pref_host_ip = *((int *)he->h_addr_list[0]);
-	}
-
-	/* Get list of gateway hosts from round-robin DNS lookup */
-	he = gethostbyname(tclink_host);
-	if (he == NULL) {
-		AddRecvParam("status", "error");
-		AddRecvParam("errortype", "cantconnect");
-		return 0;
-	}
-
-	/* Count the number of hosts available to us */
-	for (num_hosts = 0; he->h_addr_list[num_hosts]; num_hosts++)
-		;
-
-	/* If a prefered host was specified, put it first in the list */
-	if (pref_host_ip != 0)
-	{
-		/* find it in the list, and swap it with the first entry */
-		int **gw = (int **)he->h_addr_list;
-		int e;
-		for (e = 0; e < num_hosts; e++)
-			if (*gw[e] == pref_host_ip)
-			{
-				if (e > 0) {
-					int tmp = *gw[0];
-					*gw[0] = pref_host_ip;
-					*gw[e] = tmp;
-				}
-				break;
-			}
+	if (c->tc_cert == NULL) {
+		c->tc_cert = d2i_X509(NULL, &cert_data_ptr, 540);
+		if (!c->tc_cert) return 0;
 	}
 
 	/* This loop works as follows:
@@ -496,17 +534,16 @@ static int Connect(char prefer_host)
 	 * servers themselves due to half a million people trying to run credit card
 	 * transactions in the same half second - unlikely, but certainly possible.)
 	 */
-	start_time = time(0);
-	srand(time(0));
+	c->start_time = time(0);
+	c->pass = 1;
 	memset(last_connect, 0, MAX_HOSTS * sizeof(time_t));
+	host = host_hash % c->num_ips;
 
-	for (host = 0; time(0) < (start_time + TIMEOUT); host++)
+	for ( ; time(0) < (c->start_time + TIMEOUT); c->pass++)
 	{
-		if (host >= num_hosts) host = 0;
-
-		/* retry preferred host at least once more */
-		if (pref_host_ip != 0 && pref_host_try++ == 1)
-			host = 0;
+		/* retry the first host at least once */
+		if (c->pass > 2) host += 1;
+		if (host >= c->num_ips) host = 0;
 
 		/* only connect if we haven't tried this host before, or it's been a little
 		 * while (note random modifier to help stagger network traffic) */
@@ -516,9 +553,10 @@ static int Connect(char prefer_host)
 			if (num_sd < MAX_HOSTS)
 			{
 				/* fire up a new connection to this host */
-				last_connect[host] = time(0);
+				if (c->pass != 1)
+					last_connect[host] = time(0);
 
-				sd[num_sd] = BeginConnection(*((int *)he->h_addr_list[host]));
+				sd[num_sd] = BeginConnection(c, c->ip[host]);
 				if (sd[num_sd] >= 0)
 					num_sd++;
 			}
@@ -527,11 +565,11 @@ static int Connect(char prefer_host)
 			 * somewhere.  note that this also includes SSL and all that sort of fun,
 			 * so once it returns success, we're all done. */
 			if (num_sd > 0)
-				if (CheckConnection(sd, num_sd) >= 0)
+				if (CheckConnection(c, sd, num_sd) >= 0)
 				{
 					/* Success: close all other file handles and return */
 					for (i = 0; i < num_sd; i++)
-						if (sd[i] >= 0 && sd[i] != my_sd)
+						if (sd[i] >= 0 && sd[i] != c->sd)
 							close(sd[i]);
 
 					return 1;
@@ -543,14 +581,10 @@ static int Connect(char prefer_host)
 }
 
 /* Send a chunk of data through a connection previously opened with Connect(). */
-static int Send(const char *string)
+static int Send(TCLinkCon *c, const char *string)
 {
-	if (SSL_write(ssl, string, strlen(string)) < 0)
+	if (SSL_write(c->ssl, string, strlen(string)) < 0)
 		return 0;
-
-#if DEBUG_MSG
-printf("------------------------------------\n%s-------------------------\n",string);
-#endif
 
 	return 1;
 }
@@ -560,7 +594,7 @@ printf("------------------------------------\n%s-------------------------\n",str
  * it returns the length of the line read.  If there is not a complete line pending
  * for read this will block until there is, or an error occurs.
  */
-static int ReadLine()
+static int ReadLine(TCLinkCon *c, char *buffer, char *destbuf)
 {
 	struct timeval tv;
 	fd_set read;
@@ -572,35 +606,32 @@ static int ReadLine()
 		if (eol != NULL)
 		{
 			/* peel off the line and return it */
-			char *begin, *end;
-			*eol = 0;
-			strcpy(destbuff, buffer);
-			for (end = eol + 1, begin = buffer; *end != 0; end++, begin++)
-				*begin = *end;
-			*begin = 0;
-			return strlen(destbuff);
+			*eol++ = 0;
+			safe_copy(destbuf, buffer, TC_LINE_MAX);
+			memmove(buffer, eol, strlen(eol)+1);
+			return strlen(destbuf);
 		}
 		else
 		{
-			if (is_error == 1)
+			if (c->is_error == 1)
 				return -1;
 
 			/* do socket work to grab the most recent chunk of incoming data */
-			FD_ZERO(&read);   FD_SET(my_sd, &read);
-			FD_ZERO(&error);  FD_SET(my_sd, &error);
+			FD_ZERO(&read);   FD_SET(c->sd, &read);
+			FD_ZERO(&error);  FD_SET(c->sd, &error);
 			tv.tv_sec = TIMEOUT;
 			tv.tv_usec = 0;
 
-			if (select(my_sd + 1, &read, NULL, &error, &tv) < 1)
-				is_error = 1;
-			else if (FD_ISSET(my_sd, &error))
-				is_error = 1;
-			else if (FD_ISSET(my_sd, &read))
+			if (select(c->sd + 1, &read, NULL, &error, &tv) < 1)
+				c->is_error = 1;
+			else if (FD_ISSET(c->sd, &error))
+				c->is_error = 1;
+			else if (FD_ISSET(c->sd, &read))
 			{
 				int buffer_end = strlen(buffer);
-				int size = SSL_read(ssl, buffer + buffer_end, BUFF_MAX-1 - buffer_end);
+				int size = SSL_read(c->ssl, buffer + buffer_end, TC_BUFF_MAX-1 - buffer_end);
 				if (size < 0)
-					is_error = 1;
+					c->is_error = 1;
 				else
 					buffer[buffer_end + size] = 0;
 			}
@@ -612,13 +643,28 @@ static int ReadLine()
  * You ONLY need to Close() connections which opened successfully; those that don't
  * clean up after themselves before Connect() returns.
  */
-static int Close()
+static int Close(TCLinkCon *c)
 {
-	SSL_shutdown(ssl);
-	close(my_sd);
-	SSL_free(ssl);
-	SSL_CTX_free(ctx);
-	ssl_inited = 1;
+	if (c->ssl) SSL_shutdown(c->ssl);
+
+	if (c->sd >= 0) {
+		close(c->sd);
+		c->sd = -1;
+	}
+
+	if (c->ssl) {
+		SSL_free(c->ssl);
+		c->ssl = NULL;
+	}
+
+	if (c->ctx) {
+		SSL_CTX_free(c->ctx);
+		c->ctx = NULL;
+	}
+
+	/* We DON'T free c->meth or c->tc_cert here, because they can be *
+	 * reused by other transactions run on this same TCLinkHandle.   */
+
 	return 1;
 }
 
@@ -628,15 +674,35 @@ static int Close()
 
 TCLinkHandle TCLinkCreate()
 {
-	/* someday make this threadsafe */
-	ClearSendList();
-	return 1;
+	TCLinkCon *c = (TCLinkCon *)malloc(sizeof(TCLinkCon));
+
+	c->ip = NULL;
+	c->num_ips = 0;
+	c->sd = -1;
+
+	c->tc_cert = NULL;
+	c->meth = NULL;
+	c->ctx = NULL;
+	c->ssl = NULL;
+
+	c->send_param_list = NULL;
+	c->send_param_tail = NULL;
+	c->recv_param_list = NULL;
+
+	c->is_error = 0;
+	c->pass = 0;
+	c->start_time = 0;
+	c->dns = -1;
+
+	return (TCLinkHandle)c;
 }
 
 void TCLinkPushParam(TCLinkHandle handle, const char *name, const char *value)
 {
 	param *p;
-	char *c;
+	char *ch;
+
+	TCLinkCon *c = (TCLinkCon *)handle;
 
 	if (name && value)
 	{
@@ -644,69 +710,88 @@ void TCLinkPushParam(TCLinkHandle handle, const char *name, const char *value)
 		p->name = strdup(name);
 		p->value = strdup(value);
 		p->next = NULL;
-		if (send_param_tail)
-			send_param_tail->next = p;
+		if (c->send_param_tail)
+			c->send_param_tail->next = p;
 		else
-			send_param_list = p;
-		send_param_tail = p;
+			c->send_param_list = p;
+		c->send_param_tail = p;
 
-		for (c = p->name; *c; c++)
-			if (*c == '\n') *c = ' ';
-		for (c = p->value; *c; c++)
-			if (*c == '\n') *c = ' ';
+		/* remove newlines and equals signs from the parameter name */
+		for (ch = p->name; *ch; ch++)
+			if (*ch == '=' || *ch == '\n') *ch = ' ';
+
+		/* remove newlines from the value */
+		for (ch = p->value; *ch; ch++)
+			if (*ch == '\n') *ch = ' ';
 	}
 }
 
-int TCLinkSend(TCLinkHandle handle)
+void TCLinkSend(TCLinkHandle handle)
 {
 	param *p, *next;
-	char buf[32000];
-	char buf2[MAX_STRING*3];
+	char buf[TC_BUFF_MAX], destbuf[TC_LINE_MAX];
+	char buf2[1024];
+	int host_hash = 1;
 	int retval = 0;
-	char pref = 0;
 
-	ClearRecvList();
+	TCLinkCon *c = (TCLinkCon *)handle;
 
-	sprintf(buf, "BEGIN\nversion=%s\n", TCLINK_VERSION);
+	ClearRecvList(c);
 
-	for (p = send_param_list; p; p = next)
+	/* build most of the string we will send to the processor */
+	sprintf(buf, "BEGIN\nversion=%s\n", tclink_version);
+
+	for (p = c->send_param_list; p; p = next)
 	{
 		next = p->next;
-		sprintf(buf2, "%s=%s\n", p->name, p->value);
-		strcat(buf, buf2);
-		if (!strcasecmp(p->name, "billingid"))
-			pref = p->value[0];
+		SAFE_COPY(buf2, p->name);
+		SAFE_APPEND(buf2, "=");
+		SAFE_APPEND(buf2, p->value);
+		SAFE_APPEND(buf2, "\n");
+		SAFE_APPEND(buf, buf2);
+		if (!strcasecmp(p->name, "custid")) {
+			host_hash = atoi(p->value);
+			host_hash = (host_hash / 100) + (host_hash % 100);
+		}
+		free(p->name);
+		free(p->value);
 		free(p);
 	}
 
-	send_param_list = NULL;
+	c->send_param_list = c->send_param_tail = NULL;
 
-	strcat(buf, "END\n");
-
-	if (!Connect(pref))
+	/* try to make the connection */
+	if (!Connect(c, host_hash))
 	{
-		AddRecvParam("status", "error");
-		AddRecvParam("errortype", "cantconnect");
-		return 0;
+		Close(c);  // clean up any memory Connect() may have left lying around
+		AddRecvParam(c, "status", "error");
+		AddRecvParam(c, "errortype", "cantconnect");
+		return;
 	}
 
-	if (Send(buf))
+	/* append some data about the connection */
+	sprintf(buf+strlen(buf), "pass=%d\ntime=%ld\n", c->pass, time(0) - c->start_time);
+	if (c->dns != 1) SAFE_APPEND(buf, "dns=n\n");
+	SAFE_APPEND(buf, "END\n");
+
+	/* send the data */
+	if (Send(c, buf))
 	{
 		int state = 0;
-		buffer[0] = destbuff[0] = 0;
-		is_error = 0;
+		buf[0] = destbuf[0] = 0;          /* recycle buf */
+		c->is_error = 0;
 		while (1)
 		{
-			int len = ReadLine();
+			int len = ReadLine(c, buf, destbuf);
 			if (len == 0) continue;
 			if (len < 0) break;
-			if (strcasecmp(destbuff, "BEGIN") == 0)
+			if (strcasecmp(destbuf, "BEGIN") == 0)
 			{
 				if (state != 0)
 					{ state = -1; break; }
 				state = 1;
 			}
-			else if (strcasecmp(destbuff, "END") == 0)
+			else if (strcasecmp(destbuf, "END") == 0)
 			{
 				if (state != 1)
 					state = -1;
@@ -716,7 +801,7 @@ int TCLinkSend(TCLinkHandle handle)
 			}
 			else
 			{
-				if (state != 1 || !AddRecvString(destbuff))
+				if (state != 1 || !AddRecvString(c, destbuf))
 					{ state = -1; break; }
 			}
 		}
@@ -724,32 +809,25 @@ int TCLinkSend(TCLinkHandle handle)
 			retval = 1;
 	}
 
-	Close();
+	Close(c);
 
 	if (!retval)
 	{
-		ClearRecvList();
-		AddRecvParam("status", "error");
-		AddRecvParam("errortype", "linkfailure");
+		ClearRecvList(c);
+		AddRecvParam(c, "status", "error");
+		AddRecvParam(c, "errortype", "linkfailure");
 	}
-
-#if DEBUG_MSG
-	for (p = recv_param_list; p; p = p->next)
-		printf("%s: [%s]\n", p->name, p->value);
-#endif
-
-	ClearSendList();  /* this allows us to use TCLinkSend() multiple times without creating a new handle */
-
-	return retval;
 }
  
 char *TCLinkGetResponse(TCLinkHandle handle, const char *name, char *value)
 {
 	param *p;
-	for (p = recv_param_list; p; p = p->next)
+	TCLinkCon *c = (TCLinkCon *)handle;
+
+	for (p = c->recv_param_list; p; p = p->next)
 		if (strcasecmp(name, p->name) == 0)
 		{
-			strcpy(value, p->value);
+			safe_copy(value, p->value, PARAM_MAX_LEN);
 			return value;
 		}
 
@@ -771,7 +849,9 @@ char *TCLinkGetEntireResponse(TCLinkHandle handle, char *buf, int size)
 {
 	param *p;
 	int len = 0;
-	for (p = recv_param_list; p; p = p->next) {
+	TCLinkCon *c = (TCLinkCon *)handle;
+
+	for (p = c->recv_param_list; p; p = p->next) {
 		stuff_string(buf, &len, size, p->name);
 		stuff_string(buf, &len, size, "=");
 		stuff_string(buf, &len, size, p->value);
@@ -781,18 +861,27 @@ char *TCLinkGetEntireResponse(TCLinkHandle handle, char *buf, int size)
 	return buf;
 }
 
-char *TCLinkGetVersion(char *buf)
+void TCLinkDestroy(TCLinkHandle handle)
 {
-	/* TCLINK_VERSION is defined in the makefile */
-	strcpy(buf, TCLINK_VERSION);
-	return buf;
+	TCLinkCon *c = (TCLinkCon *)handle;
+	if (!c) return;
+
+	ClearSendList(c);
+	ClearRecvList(c);
+	Close(c);
+
+	if (c->ip)
+		free(c->ip);
+
+	if (c->tc_cert)
+		X509_free(c->tc_cert);
+
+	free(c);
 }
 
-void TCLinkForceHost(char *host)
+char *TCLinkGetVersion(char *buf)
 {
-	if (host)
-		tclink_host = host;
-	else
-		tclink_host = DEFAULT_HOST;
+	strcpy(buf, tclink_version);
+	return buf;
 }
 
