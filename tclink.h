@@ -1,6 +1,6 @@
 /* tclink.h - Header file for TCLink library.
  *
- * TCLink Copyright (c) 2002 TrustCommerce.
+ * TCLink Copyright (c) 2003 TrustCommerce.
  * http://www.trustcommerce.com
  * developer@trustcommerce.com
  * (626) 744-7700

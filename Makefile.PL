@@ -34,7 +34,7 @@ WriteMakefile(
     'NAME'		=> 'Net::TCLink',
     'VERSION_FROM'	=> 'TCLink.pm', 
     'PREREQ_PM'		=> {}, 
-    'DEFINE'		=> '-DTCLINK_VERSION=\"3.3.1-Perl-' . $platform . '\"', 
+    'DEFINE'		=> '-DPERL5 -DTCLINK_VERSION=\"3.4-Perl-' . $platform . '\"', 
     'LIBS'	=> ["-L$openssl_path -L$openssl_path/lib $libs"],
     'INC' 	=> "-I$openssl_path/include"
 );

@@ -1,16 +1,16 @@
 <html>
 
 <head>
-<title> TrustCommerce Developer's Guide 2.2 </title>
+<title> TrustCommerce Developer's Guide 2.3 </title>
 </head>
 
 <body bgcolor=white text=black link=blue vlink=darkblue>
 
 <hr>
-<h1>TrustCommerce Developer's Guide 2.2.1</h1>
+<h1>TrustCommerce Developer's Guide 2.3</h1>
 <a href=http://www.trustcommerce.com>http://www.trustcommerce.com</a><br>
 <a href=mailto:developer@trustcommerce.com>developer@trustcommerce.com</a><p>
-January 30, 2002<br>
+March 18, 2003<br>
 
 <hr><p>
 
@@ -26,15 +26,17 @@ January 30, 2002<br>
 	<tr><td> <a href=#cardpresent>VII. Card-Present Transactions</a> </td></tr>
 	<tr><td> <a href=#ach>IX. ACH</a> </td></tr>
 	<tr><td> <a href=#credits>X. Postauths, Credits, and Chargebacks</a> </td></tr>
-	<tr><td> <a href=#billingids>XI. Billing IDs</a> </td></tr>
+	<tr><td> <a href=#billingids>XI. TCS Citadel (Billing IDs)</a> </td></tr>
 	<tr><td> <a href=#recurring>XII. Recurring Billing</a> </td></tr>
 	<tr><td> <a href=#wallet>XIII. TCS Wallet</a> </td></tr>
-	<tr><td> <a href=#fulfillment>XIV. Automated Fulfillment</a> </td></tr>
-	<tr><td> <a href=#query>XV. Vault Query API</a> </td></tr>
+	<tr><td> <a href=#pl2>XIV. Purchase Level II (Commercial Cards)</a> </td></tr>
+	<tr><td> <a href=#orderdetail>XV. Order Detail</a> </td></tr>
+	<tr><td> <a href=#query>XVI. Vault Query API</a> </td></tr>
 	<tr><td> <a href=#testdata>Appendix A - Test Data</a> </td></tr>
 	<tr><td> <a href=#troubleshooting>Appendix B - Troubleshooting</a> </td></tr>
 	<tr><td> <a href=#httpspost>Appendix C - Connecting via HTTPS POST</a> </td></tr>
 	<tr><td> <a href=#currency>Appendix D - Currency Table</a> </td></tr>
+	<tr><td> <a href=#inputfields>Appendix E - Input Field List</a> </td></tr>
 </table>
 
 <hr><p>
@@ -239,13 +241,13 @@ January 30, 2002<br>
 	<tr><th>Parameter Name</th><th>Default Value</th><th>Description</th></tr>
 	<tr><td>media</td><td>cc</td><td>"cc" for credit card or "ach" for ACH.
 	<tr><td>currency</td><td>usd</td><td>Currency code (see section X for the table of codes)
-	<tr><td>avs</td><td>y</td><td>AVS requested, "y" or "n" (see notes below).
+	<tr><td>avs</td><td>n</td><td>AVS requested, "y" or "n" (see notes below).
 	<tr><td>name</td><td>&nbsp;</td><td>Cardholder's name.
 	<tr><td>address1</td><td>&nbsp;</td><td>First line of cardholder's street address.
 	<tr><td>address2</td><td>&nbsp;</td><td>Second line of cardholder's street address.
 	<tr><td>city</td><td>&nbsp;</td><td>Cardholder's city.
-	<tr><td>state</td><td>&nbsp;</td><td>Two-character code for the cardholder's state.
-	<tr><td>zip</td><td>&nbsp;</td><td>Cardholder's zipcode, five or nine digits (no spaces or dashes).
+	<tr><td>state</td><td>&nbsp;</td><td>Two-character code for the cardholder's state, or the full region/province for international addresses.
+	<tr><td>zip</td><td>&nbsp;</td><td>Cardholder's zipcode, five or nine digits with no spaces or dashes, or the full postal code for international addresses.
 	<tr><td>country</td><td>&nbsp;</td><td>Cardholder's country, leave blank for US.
 	<tr><td>phone</td><td>&nbsp;</td><td>Cardholder's phone number.
 	<tr><td>email</td><td>&nbsp;</td><td>Cardholder's email address.
@@ -254,7 +256,7 @@ January 30, 2002<br>
 <p>
 
 
-A note about AVS: The AVS system is a useful way to help screen for fraud, as it requires that whomever is sending the transaction know the billing address for the card in question.  As a merchant, you should know that AVS is not uniformly supported by card issuers; approximately 30% of US-based credit cards will not have AVS capability, and AVS is not available with any non-US cards at all.  If avs of "y" (the default) is used, it will attempt to verify the address data with AVS, but if it is unavailable, it will not cause the transaction to fail.  Only if AVS is available and the address data does not match will the transaction be declined due to AVS.  You may wish to screen AVS results more closely.  For this reason, sales and preauths will return the AVS code in a parameter named avs.  It returns a single character code, which are enumerated in the table below.
+A note about AVS: The AVS system is a useful way to help screen for fraud, as it requires that whomever is sending the transaction know the billing address for the card in question.  As a merchant, you should know that AVS is not uniformly supported by card issuers; approximately 30% of US-based credit cards will not have AVS capability, and AVS is not available with any non-US cards at all.  If avs=y is used, it will attempt to verify the address data with AVS, but if it is unavailable, it will not cause the transaction to fail.  Only if AVS is available and the address data does not match will the transaction be declined due to AVS.  You may wish to screen AVS results more closely.  For this reason, sales and preauths will return the AVS code in a parameter named avs.  (This parameter is returned even when avs=n, which is the default.)  It returns a single character code, which are enumerated in the table below.
 
 
 	<center><h3>AVS Returns Codes</h3></center>
@@ -278,7 +280,7 @@ A note about AVS: The AVS system is a useful way to help screen for fraud, as it
 
 Only the numeric parts of the address (street address and zipcode) are verified.  It should also be noted that oftentimes AVS data is incorrect or not entirely up-to-date, dependent upon the card issuing bank.  For these reasons, you should treat AVS as a helpful tool which should be used in combination with other methods (dependent upon your business model) for screening transactions.  If you trust AVS too blindly, you may risk losing legitimate sales.  Some merchants (again, dependent upon business model) choose to turn AVS off altogether.  You should analyze your customer base and make the decision that will work best for your business.
 <p>
-A note on offlineauthcode: Some cards returned a declinetype of call.  This indicates that the card cannot be automatically authorized, but if you call the card issuers, they may be able to give you a manual authorization, which will consist of a six-digit auth code.  You may then push the transaction through by entering that code into the offlineauthcode field.  Be warned: offlineauthcode is NOT a realtime authorization, and is not guaranteed in the same way as a normal authorization.  Be careful with the use of this parameter.
+A note on offlineauthcode: Some cards returned a declinetype of call.  This indicates that the card cannot be automatically authorized, but if you call the card issuers, they may be able to give you a manual authorization, which will consist of a six-digit auth code.  You may then push the transaction through by entering that code into the offlineauthcode field.  offlineauthcode can only be used with sale transactions.  Be warned: offlineauthcode skips the authorization phase altogether, and thus is not guaranteed in the same way as a normal authorization.  Be careful with the use of this parameter.
 <p>
 
 
@@ -485,12 +487,12 @@ A note on offlineauthcode: Some cards returned a declinetype of call.  This indi
 <p>
 
 
-<a name=billingids></a><h2>XI. Billing IDs</h2>
+<a name=billingids></a><h2>XI. TCS Citadel (Billing IDs)</h2>
 
 
-	The Billing ID system enables you to store the billing information for your customers in the encrypted TrustCommerce database, and recall it with a single six-character alphanumeric code known as a billing ID.  Besides offloading the liability of storing sensitive data such as credit card numbers from your business to TrustCommerce, it also can simplify database access on your servers.
+	The TCS Citadel enables you to store the billing information for your customers in the encrypted TrustCommerce database, and recall it with a single six-character alphanumeric code known as a billing ID.  Besides offloading the liability of storing sensitive data such as credit card numbers from your business to TrustCommerce, it also can simplify database access on your servers.
 <p>
-	Billing IDs add two new actions, store and unstore.  These allow you to create, update, and deactivate billing IDs.  Once stored, the billing ID will be passed in place of the many billing information fields for preauth and sale transactions.
+	The Citadel add two new actions, store and unstore.  These allow you to create, update, and deactivate billing IDs.  Once stored, the billing ID will be passed in place of the many billing information fields for preauth and sale transactions.
 <p>
 	The store transaction looks very similar to a preauth or sale.  You may pass credit card information, billing and shipping address, or even ACH information.  (Please see sections X and X for a detailed description of these parameters.)  It adds one additional parameter:
 
@@ -503,7 +505,8 @@ A note on offlineauthcode: Some cards returned a declinetype of call.  This indi
 	</table>
 <p>
 
-
+	You can update information on existing billing IDs by passing the billingid field along with the store transaction.  If you wish to erase the data contained in a field, pass the exact string "null" (four characters, all lower case) as the parameter value.
+<p>
 	The verify parameter is useful for ensuring that the card number is valid if you are not planning to bill the customer right away.  It has no effect for ACH billing IDs, because there is no such thing as an ACH preauth.  By default, the verification uses AVS; if you don't wish to use AVS, pass an avs of "n".  Please note: normally, billing ID storage returns a status of accepted, because the card is unverified.  If you use the verify parameter, however, it will return approved upon success.
 <p>
 	The unstore action takes a single parameter:
@@ -575,13 +578,21 @@ A note on offlineauthcode: Some cards returned a declinetype of call.  This indi
 <p>
 
 
-Cycle is in the format of a number followed by a character representing the timeframe: 'd' for days, 'w' for weeks, 'm' for months or 'y' for years.  For example, a value of "3d" in this field would cause the charge to recur every three days, whereas a value of "2m" would cause it to recur every two months.
+Cycle is in the format of a number between 1 and 99 followed by a character representing the timeframe: 'd' for days, 'w' for weeks, 'm' for months or 'y' for years.  For example, a value of "3d" in this field would cause the charge to recur every three days, whereas a value of "2m" would cause it to recur every two months.
 <p>
 Amount is identical to the amount passed to a sale or a preauth, and indicates the amount of each charge made during the subscription.
 <p>
-Start is an optional field which allows the delay of the cycle's start.  By default, the cycle starts the day the billing ID is stored.  If it is specified in the format YYYY-MM-DD, it indicates a date when the first payment should be made.  (For example, "2005-02-01" would be February 1, 2005.)  If it is in the same format as the cycle (a number followed by a character), it indicates an offset from the current date.  (For example, "1d" would start the billing tomorrow.)  Note: recurring transactions will appear at the end of the business day they are billed on, so the first transaction for new subscriptions will not appear in the Vault until that time.
+Start is an optional field which allows the delay of the cycle's start.  By default, the cycle starts the day the billing ID is stored.  If it is specified in the format YYYY-MM-DD, it indicates a date when the first payment should be made.  (For example, "2005-02-01" would be February 1, 2005.)  If it is in the same format as the cycle (a number followed by a character), it indicates an offset from the current date.  (For example, "1d" would start the billing tomorrow.)
+<p>
+If there is no start parameter, the first transaction is run immediately (and can cause the store action to return a "decline" or other result you would expect from a sale).  Other return parameters associated with auths, such as avs code, will be returned as well.
 <p>
 Payments is also optional; left blank or set to zero it will continue the billing cycle until it is manually interrupted by an unstore, or by updating the billing ID with cycle set to "null".  Once the final payment is made, the billing ID will be unstored.
+<p>
+There is only one instance in which the cycle parameter is not required, and
+that is a one-time future payment.  By setting payments to "1" and passing a
+start date, the payment will be made on that date and then the billing ID
+unstored.  The cycle parameter may be included with a one-time future
+payment, but it will have no effect.
 <p>
 
 
@@ -611,9 +622,13 @@ Payments is also optional; left blank or set to zero it will continue the billin
 		params['cycle'] = '62';
 		params['start'] = '1w';
 	elif (mode == 4):
-		# Make anual payments, and don't start until September 1, 2002
+		# Make annual payments, and don't start until September 1, 2004
 		params['cycle'] = '1y';
-		params['start'] = '2003-09-02';
+		params['start'] = '2004-09-01';
+	elif (mode == 5):
+		# Make a one time payment in 45 days
+		params['start'] = '45d';
+		params['payments'] = '1';
 
 	tclink.send(params)
 </pre>
@@ -677,12 +692,58 @@ Payments is also optional; left blank or set to zero it will continue the billin
 <p>
 
 
-<a name=fulfillment></a><h2>XIV. Automated Fulfillment</h2>
+<a name=pl2></a><h2>XIV. Purchase Level II</h2>
 
-
-	TrustCommerce offers the unique feature of automated fulfillment, by which orders submitted through the TCLink API can contain parameters describing product information.  This information is then passed on to your fulfillment house, which ships the products automatically.
+	Purchase Level II is required by some merchant banks to achieve a qualifed discount rate.  It is only used for B2B or B2G transactions.  If you are selling products directly to consumers, you do not need to use PL2.  Additionally, PL2 can only be used if the cardholder is using one of the three types of commercial cards: a corporate card, a business card, or a purchasing card.
 <p>
-	First, it is necessary to specify the shipping address for the customer.  If it is the same as the billing address, you need not duplicate it, but rather just send the shiptosame parameter set to y.  The table below enumerates the shipping parameters.
+	PL2 has three new parmaeters:
+
+	<center><h3>PL2 Input Parameters</h3></center>
+	<table align=center border=1 cellpadding=5 bgcolor=#e0e0e0>
+	<tr><th>Parameter Name</th><th>Description</th></tr>
+	<tr><td>purchaselevel</td><td>Specify as "2".</td></tr>
+	<tr><td>purchaseordernum</td><td>The purchasing order number from their Visa purchasing card.  This is either a 16 or a 17 digit number.  If they are not using a Visa purchasing card, do not pass this field.</td></tr>
+	<tr><td>tax</td><td>The amount of tax, in cents, charged for the order.  If the order is tax exempt omit this field or set it to 0.</td></tr>
+	</table>
+<p>
+	A successful PL2 transaction will return one extra response parameter
+<p>
+	<center><h3>PL2 Output Parameter</h3></center>
+	<table align=center border=1 cellpadding=5 bgcolor=#e0e0e0>
+	<tr><th>Parameter Name</th><th>Description</th></tr>
+	<tr><td>commercialcard</td><td>Set to "S" for if it is a purchasing card, "R" if it is corporate card, and "B" if it is a business card.</td></tr>
+	</table>
+<p>
+	If you don't care what kind of card they used (which you probably don't), there is no reason to store or otherwise do anything with the commercialcard return value.  TrustCommerce internally handles all the details for you.  However, if you want this information for some reason, you can access it from the result parameters.
+<p>
+<h3>Purchase Level II Example</h3>
+<pre>
+	params = {
+		'custid':           'mycustid',
+		'password':         'mypass',
+		'action':           'sale',
+		'cc':               '4111111111111111',
+		'exp':              '0404',
+		'amount':           '1000'
+		'name':             'Jennifer Smith',
+		'purchaselevel':    '2'
+		'purchaseordernum': '12345678901234567'
+		'tax':              '83'    # $10.00 x 8.25% sales tax = $0.83
+
+	}
+
+	result = tclink.send(params)
+
+	if (result['status'] == 'approved'):
+		print 'Approved'
+</pre>
+<p>
+
+<a name=orderdetail></a><h2>XV. Order Detail</h2>
+
+	TrustCommerce offers the unique feature of automated fulfillment, by which orders submitted through the TCLink API can contain parameters describing product information.  This information is then passed on to your fulfillment house, which ships the products automatically.  Even if you aren't using automated fulfillment, you can use the order line item specification parameters to store information in the TrustCommerce transaction database about the type of products ordered.
+<p>
+	First, you may wish to specify the shipping address for the customer.  If it is the same as the billing address, you need not duplicate it, but rather just send the shiptosame parameter set to y.  The table below enumerates the shipping parameters.
 
 
 	<center><h3>ShipTo Parameters</h3></center>
@@ -768,7 +829,7 @@ Payments is also optional; left blank or set to zero it will continue the billin
 <p>
 
 
-<a name=query></a><h2>XV. Vault Query API</h2>
+<a name=query></a><h2>XVI. Vault Query API</h2>
 
 
 	The Vault website serves as a web-based interface for merchant reconciliation.  On the backend, it is a complex database that tracks all transactional data for your TrustCommerce account.  The information contained in the Vault can be accessed at the API level using a standard CGI query over HTTPS.
@@ -791,6 +852,7 @@ Payments is also optional; left blank or set to zero it will continue the billin
 	<tr><td>chain</td><td>&nbsp;</td><td>Narrow search to a single chain of transactions.</td></tr>
 	<tr><td>transid</td><td>&nbsp;</td><td>Narrow search to a single transaction ID.</td></tr>
 	<tr><td>billingid</td><td>&nbsp;</td><td>Narrow search to a single billing ID.</td></tr>
+	<tr><td>pastdue</td><td>&nbsp;</td><td>Use 'y' or 'n'. For billing ID search.  Show only recurring billing IDs that have been unable to capture the requested funds.</td></tr>
 	<tr><td>action</td><td>&nbsp;</td><td>Narrow search by action (preauth, sale, credit, etc).</td></tr>
 	<tr><td>status</td><td>&nbsp;</td><td>Narrow search by status (approved, accepted, decline, etc).</td></tr>
 	<tr><td>name</td><td>&nbsp;</td><td>Narrow search by cardholder name, partial or complete.</td></tr>
@@ -826,7 +888,7 @@ Payments is also optional; left blank or set to zero it will continue the billin
 	&lt;/tr&gt;
 	&lt;tr&gt;
 		&lt;td&gt; format &lt;/td&gt;
-		&lt;td&gt; &lt;select name=output&gt; &lt;option value=text&gt;text&lt;/option&gt;
+		&lt;td&gt; &lt;select name=format&gt; &lt;option value=text&gt;text&lt;/option&gt;
 				&lt;option value=html&gt;html&lt;/option&gt;&lt;/select&gt;&lt;/td&gt;
 		&lt;td&gt; Human readable (html) or computer readable (text) results&lt;/td&gt;
 	&lt;/tr&gt;
@@ -869,6 +931,15 @@ Payments is also optional; left blank or set to zero it will continue the billin
 		&lt;td&gt; billingid &lt;/td&gt;
 		&lt;td&gt; &lt;input type=text name=transid&gt; &lt;/td&gt;
 		&lt;td&gt; Narrow search to a single billingid &lt;/td&gt;
+	&lt;/tr&gt;
+	&lt;tr&gt;
+		&lt;td&gt; pastdue &lt;/td&gt;
+		&lt;td&gt; &lt;select name=pastdue&gt; 
+		&lt;option value=y&gt;y&lt;/option&gt;
+		&lt;option value=n&gt;n&lt;/option&gt;
+		&lt;/select&gt;&lt;/td&gt;
+		&lt;td&gt; Use 'y' or 'n'. For billing ID search.  Show only recurring billing IDs
+		     that have been unable to capture the requested funds. &lt;/td&gt;
 	&lt;/tr&gt;
 	&lt;tr&gt;
 		&lt;td&gt; action &lt;/td&gt;
@@ -934,6 +1005,7 @@ Payments is also optional; left blank or set to zero it will continue the billin
 	<tr><td>American Express</td><td>341111111111111</td><td>04/04</td><td>12 Colorado Blvd.</td><td>Elsewhere</td><td>IL</td><td>54321</td><td>4000</td></tr>
 	<tr><td>Discover</td><td>6011111111111117</td><td>04/04</td><td>6789 Green Ave.</td><td>Nowhere</td><td>MA</td><td>12345</td><td> - </td></tr>
 	<tr><td>Diner's Club</td><td>36484444444446</td><td>04/04</td><td>7390 Del Mar Blvd.</td><td>Atown</td><td>NY</td><td>01101</td><td> - </td></tr>
+	<tr><td>JCB</td><td>213122222222221</td><td>04/04</td><td>350 Madison Ave.</td><td>Springfield</td><td>OH</td><td>400000</td><td> - </td></tr>
 	</table>
 <p>
 	The following card numbers will generate a decline, with the declinetype listed as follows.  You may use this to test code which takes different paths dependant upon the type of decline.
@@ -1034,8 +1106,70 @@ Payments is also optional; left blank or set to zero it will continue the billin
 	</table>
 <p>
 
+<a name=inputfields></a><h2>Appendix E - Input Field List</h2>
+
+	<center><h3>Input Fields</h3></center>
+	<table align=center border=1 cellpadding=5 bgcolor=#e0e0e0>
+		<tr><th>Name</th><th>Type</th><th>Minimum Length</th><th>Maximum Length</th></tr>
+			<tr><td>custid</td><td>string</td><td>1</td><td>20</td></tr>
+			<tr><td>password</td><td>string</td><td>1</td><td>20</td></tr>
+			<tr><td>action</td><td>string</td><td>1</td><td>10</td></tr>
+			<tr><td>media</td><td>string</td><td>1</td><td>10</td></tr>
+			<tr><td>currency</td><td>string</td><td>3</td><td>3</td></tr>
+			<tr><td>amount</td><td>number</td><td>3</td><td>8</td></tr>
+			<tr><td>cc</td><td>number</td><td>13</td><td>16</td></tr>
+			<tr><td>exp</td><td>number</td><td>4</td><td>4</td></tr>
+			<tr><td>cvv</td><td>number</td><td>3</td><td>4</td></tr>
+			<tr><td>routing</td><td>number</td><td>9</td><td>9</td></tr>
+			<tr><td>account</td><td>number</td><td>3</td><td>17</td></tr>
+			<tr><td>billingid</td><td>string</td><td>6</td><td>6</td></tr>
+			<tr><td>verify</td><td>string</td><td>1</td><td>1</td></tr>
+			<tr><td>transid</td><td>string</td><td>14</td><td>14</td></tr>
+			<tr><td>avs</td><td>string</td><td>1</td><td>10</td></tr>
+			<tr><td>name</td><td>string</td><td>1</td><td>60</td></tr>
+			<tr><td>address1</td><td>string</td><td>1</td><td>80</td></tr>
+			<tr><td>address2</td><td>string</td><td>1</td><td>80</td></tr>
+			<tr><td>zip</td><td>string</td><td>1</td><td>20</td></tr>
+			<tr><td>city</td><td>string</td><td>1</td><td>40</td></tr>
+			<tr><td>state</td><td>string</td><td>1</td><td>20</td></tr>
+			<tr><td>country</td><td>string</td><td>1</td><td>20</td></tr>
+			<tr><td>phone</td><td>string</td><td>1</td><td>30</td></tr>
+			<tr><td>email</td><td>string</td><td>1</td><td>50</td></tr>
+			<tr><td>track1</td><td>string</td><td>1</td><td>79</td></tr>
+			<tr><td>track2</td><td>string</td><td>1</td><td>40</td></tr>
+			<tr><td>ticket</td><td>string</td><td>1</td><td>30</td></tr>
+			<tr><td>operator</td><td>string</td><td>1</td><td>20</td></tr>
+			<tr><td>shiptosame</td><td>string</td><td>1</td><td>1</td></tr>
+			<tr><td>shipto_name</td><td>string</td><td>1</td><td>60</td></tr>
+			<tr><td>shipto_address1</td><td>string</td><td>1</td><td>40</td></tr>
+			<tr><td>shipto_address2</td><td>string</td><td>1</td><td>20</td></tr>
+			<tr><td>shipto_city</td><td>string</td><td>1</td><td>20</td></tr>
+			<tr><td>shipto_state</td><td>string</td><td>2</td><td>2</td></tr>
+			<tr><td>shipto_zip</td><td>string</td><td>1</td><td>20</td></tr>
+			<tr><td>shipto_country</td><td>string</td><td>1</td><td>20</td></tr>
+			<tr><td>numitems</td><td>number</td><td>1</td><td>3</td></tr>
+			<tr><td>price</td><td>string</td><td>1</td><td>20</td></tr>
+			<tr><td>shippingcode</td><td>string</td><td>1</td><td>20</td></tr>
+			<tr><td>shippinghandling</td><td>string</td><td>1</td><td>20</td></tr>
+			<tr><td>productcode#</td><td>string</td><td>1</td><td>20</td></tr>
+			<tr><td>quantity#</td><td>number</td><td>1</td><td>3</td></tr>
+			<tr><td>price#</td><td>number</td><td>1</td><td>6</td></tr>
+			<tr><td>tax#</td><td>number</td><td>1</td><td>6</td></tr>
+			<tr><td>shippinghandling#</td><td>number</td><td>1</td><td>6</td></tr>
+			<tr><td>wallet</td><td>string</td><td>1</td><td>1</td></tr>
+			<tr><td>walletsize</td><td>string</td><td>3</td><td>8</td></tr>
+			<tr><td>walletexposure</td><td>string</td><td>1</td><td>3</td></tr>
+			<tr><td>start</td><td>string</td><td>2</td><td>10</td></tr>
+			<tr><td>cycle</td><td>string</td><td>2</td><td>4</td></tr>
+			<tr><td>payments</td><td>number</td><td>1</td><td>4</td></tr>
+			<tr><td>demo</td><td>string</td><td>1</td><td>1</td></tr>
+			<tr><td>offlineauthcode</td><td>string</td><td>6</td><td>6</td></tr>
+	</table>
+<p>
+
+
 <hr>
-<center><font size=-1><i>Copyright &copy; 2002 TrustCommerce</i></font></center>
+<center><font size=-1><i>Copyright &copy; 2003 TrustCommerce</i></font></center>
 
 </body>
 </html>
