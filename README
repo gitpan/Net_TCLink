@@ -1,0 +1,49 @@
+
+
+                             Net::TCLink v3.2.5
+                             Perl Implementation
+                       copyright (C) TrustCommerce 2001
+                         http://www.trustcommerce.com
+                         developer@trustcommerce.com
+
+                              October 23, 2001
+
+I. DESCRIPTION
+
+  Net::TCLink is a thin client library to allow your e-commerce servers to
+connect to the TrustCommerce payment gateway easily and consistently.
+The protocol (which is the same across all platforms and languages) is
+well-documented in the Web Developer's Guide, so please consult it for
+any questions you may have about the protocol syntax itself.
+
+  If you are using Perl or ActivePerl on Win32, please download
+the COM object from the Vault website.
+
+
+II. INSTALLATION
+
+  You will need the OpenSSL libraries and header files installed on your 
+system to compile Net::TCLink.  You can download them from 
+http://www.openssl.org.  Many modern UNIX systems (including Red Hat 
+Linux 7.0 and above) come with the OpenSSL libraries pre-installed.
+
+  The installation should need only the following steps.
+
+  $ perl Makefile.PL
+  $ make
+  $ make install
+
+
+III. USAGE
+
+  The included perl script 'test.pl' shows how easy it is to use
+the Net::TCLink Perl module.
+
+	The Net::TCLink is very easy to use.  It consists of a single function 
+call "send()" that take a hash or a hash reference as it's only parameter.  
+The hash must contain name/value pairs required to run transactions through 
+the TrustCommerce gateway.  The return value is a hash of values describing the
+status of the transaction. Please refer to the TCDevGuide.txt or 
+TCDevGuide.html in the doc folder for more information.
+
+
